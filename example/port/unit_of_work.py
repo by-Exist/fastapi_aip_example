@@ -2,9 +2,10 @@ from types import TracebackType
 from typing import Optional, Protocol
 
 from typing_extensions import Self
+from .repository import IPublisherRepository, IBookRepository
 
 
-class UnitOfWork(Protocol):
+class IContextManagerUnitOfWork(Protocol):
     async def __aenter__(self) -> Self:
         ...
 
@@ -21,3 +22,9 @@ class UnitOfWork(Protocol):
 
     async def rollback(self) -> None:
         ...
+
+
+class IUnitOfWork(IContextManagerUnitOfWork, Protocol):
+
+    books: IBookRepository
+    publishers: IPublisherRepository

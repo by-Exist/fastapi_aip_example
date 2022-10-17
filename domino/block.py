@@ -1,14 +1,12 @@
 from abc import abstractmethod
 from typing import Protocol
-from uuid import UUID
 
 from typing_extensions import Self
 
 
 # Block
 class IBlock(Protocol):
-
-    id: UUID
+    ...
 
 
 class IPublicBlock(IBlock, Protocol):
