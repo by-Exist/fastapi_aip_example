@@ -23,7 +23,7 @@ class BookRepository(IBookRepository):
         return (await self._session.execute(select)).scalars().all()
 
     async def delete(self, book: Book) -> None:
-        return await super().delete(book)
+        await self._session.delete(book)
 
 
 @dataclass
@@ -41,4 +41,4 @@ class PublisherRepository(IPublisherRepository):
         return (await self._session.execute(select)).scalars().all()
 
     async def delete(self, publisher: Publisher) -> None:
-        return await super().delete(publisher)
+        await self._session.delete(publisher)
