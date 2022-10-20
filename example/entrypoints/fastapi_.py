@@ -15,6 +15,50 @@ from ..domain.book import Book
 from ..service.blocks import commands as blocks
 
 app = FastAPI()
+domino = bootstrap(start_orm_mapper=True, Uow=UnitOfWork)
+
+
+async def create_test_resource():
+    # create publisher
+    publisher_id = uuid4()
+    await domino.start(blocks.CreatePublisher(id=publisher_id, title="무궁화출판사"))
+    # create publishser's books
+    await domino.start(
+        blocks.CreateBook(
+            id=uuid4(),
+            publisher_id=publisher_id,
+            title="동해물과",
+            author_name="작가명",
+            publish_time=datetime.now(),
+        )
+    )
+    await domino.start(
+        blocks.CreateBook(
+            id=uuid4(),
+            publisher_id=publisher_id,
+            title="백두산이",
+            author_name="작가명",
+            publish_time=datetime.now(),
+        )
+    )
+    await domino.start(
+        blocks.CreateBook(
+            id=uuid4(),
+            publisher_id=publisher_id,
+            title="마르고",
+            author_name="작가명",
+            publish_time=datetime.now(),
+        )
+    )
+    await domino.start(
+        blocks.CreateBook(
+            id=uuid4(),
+            publisher_id=publisher_id,
+            title="닳도록",
+            author_name="작가명",
+            publish_time=datetime.now(),
+        )
+    )
 
 
 @app.on_event("startup")  # type: ignore
@@ -26,8 +70,7 @@ async def startup():
         await conn.run_sync(mapper_registry.metadata.create_all)
         await conn.commit()
 
-
-domino = bootstrap(start_orm_mapper=True, Uow=UnitOfWork)
+    await create_test_resource()
 
 
 #
@@ -46,6 +89,7 @@ class PublisherResponse(BaseModel):
     "/publishers/{publisher_id}",
     status_code=status.HTTP_200_OK,
     response_model=PublisherResponse,
+    tags=["Publisher"],
 )
 async def get_publisher(publisher_id: UUID):
     async with UnitOfWork() as uow:
@@ -64,6 +108,7 @@ class CreatePublisherRequest(BaseModel):
 @app.post(
     "/publishers",
     response_model=PublisherResponse,
+    tags=["Publisher"],
 )
 async def create_publisher(req: CreatePublisherRequest):
     publisher_id = uuid4()
@@ -84,6 +129,7 @@ class FixPublisherTitleRequest(BaseModel):
     "/publishers/{publisher_id}:fixTitle",
     status_code=status.HTTP_204_NO_CONTENT,
     response_class=Response,
+    tags=["Publisher"],
 )
 async def fix_title_publisher(publisher_id: UUID, req: FixPublisherTitleRequest):
     await domino.start(
@@ -94,6 +140,10 @@ async def fix_title_publisher(publisher_id: UUID, req: FixPublisherTitleRequest)
 #
 # Get Book
 #
+WILDCARD_COLLECTION_ID = "-"
+WILDCARD_COLLECTION_ID_TYPE = Literal["-"]
+
+
 class BookResponse(BaseModel):
 
     id: UUID
@@ -111,15 +161,16 @@ class BookResponse(BaseModel):
     "/publishers/{publisher_id}/books/{book_id}",
     status_code=status.HTTP_200_OK,
     response_model=BookResponse,
+    tags=["Book"],
 )
 async def get_book(
-    publisher_id: UUID | Literal["-"],
+    publisher_id: UUID | Literal[WILDCARD_COLLECTION_ID_TYPE],
     book_id: UUID,
 ):
     async with UnitOfWork() as uow:
         book = await uow.books.get(book_id)
         assert book
-        if publisher_id != "-":
+        if publisher_id != WILDCARD_COLLECTION_ID:
             assert book.publisher_id == publisher_id
     return book
 
@@ -136,6 +187,7 @@ class CreateBookRequest(BaseModel):
 @app.post(
     "/publishers/{publisher_id}/books",
     response_model=BookResponse,
+    tags=["Book"],
 )
 async def create_book(publisher_id: UUID, req: CreateBookRequest):
     async with UnitOfWork() as uow:
@@ -159,7 +211,11 @@ async def create_book(publisher_id: UUID, req: CreateBookRequest):
 #
 # Search Books
 #
-class SearchBooksResponse(BaseModel):
+DEFAULT_PAGE_SIZE = 30
+DEFAULT_ORDER_BY = [Book.publish_time]
+
+
+class ListBooksResponse(BaseModel):
     books: list[BookResponse]
     next_page_token: str
 
@@ -183,46 +239,58 @@ class BookCursor(Cursor):
     publish_time: datetime
 
 
-DEFAULT_PAGE_SIZE = 30
-
-
 @app.get(
     "/publishers/{publisher_id}/books:search",
-    response_model=SearchBooksResponse,
+    response_model=ListBooksResponse,
+    tags=["Book"],
 )
 async def search_books(
-    publisher_id: UUID | Literal["-"],
+    publisher_id: UUID | WILDCARD_COLLECTION_ID_TYPE,
     filter: str | None = None,
     order_by: str | None = None,
     page_size: int | None = None,
     page_token: str | None = None,
     skip: int | None = None,
 ):
-    stat = select(Book)
-    if publisher_id != "-":
-        stat = stat.where(Book.publisher_id == publisher_id)
-    filter_clause = filter_converter.convert(filter) if filter else None
-    if filter_clause:
-        stat = stat.where(filter_clause)
-    order_by_clauses = order_by_converter.convert(order_by) if order_by else None
-    if order_by_clauses:
-        stat = stat.order_by(*order_by_clauses)
-    page_size = page_size or DEFAULT_PAGE_SIZE
-    stat = stat.limit(page_size + 1)
-    if skip:
-        stat = stat.offset(skip)
+
+    token = None
     if page_token:
         token = PageToken[BookCursor].decode(page_token)
         assert token.filter_query == filter
         assert token.order_by_query == order_by
-        page_clause = get_page_clause(order_by_clauses, token.cursor)
+
+    publisher_clause = (
+        Book.publisher_id == publisher_id
+        if publisher_id != WILDCARD_COLLECTION_ID
+        else None
+    )
+    filter_clause = filter_converter.convert(filter) if filter else None
+    order_by_clauses = (
+        order_by_converter.convert(order_by) if order_by else DEFAULT_ORDER_BY
+    )
+    page_clause = get_page_clause(order_by_clauses, token.cursor) if token else None
+    limit = page_size if page_size else DEFAULT_PAGE_SIZE
+    offset = skip if skip else None
+
+    stat = select(Book)
+    if publisher_clause is not None:
+        stat = stat.where(publisher_clause)
+    if filter_clause is not None:
+        stat = stat.where(filter_clause)
+    if page_clause is not None:
         stat = stat.where(page_clause)
+    stat = stat.order_by(*order_by_clauses)
+    if limit:
+        stat = stat.limit(limit + 1)
+    if offset:
+        stat = stat.offset(offset)
+
     async with UnitOfWork() as uow:
         books = await uow.books.query(stat)
-    next = books.pop() if len(books) > page_size else None
-    next_page_token = ""
-    if next:
-        next_page_token = PageToken[BookCursor](
+
+    next_page_book = books.pop() if len(books) > limit else None
+    next_page_token = (
+        PageToken(
             filter_query=filter,
             order_by_query=order_by,
             cursor=BookCursor(
@@ -231,6 +299,10 @@ async def search_books(
                 publish_time=books[-1].publish_time,
             ),
         ).encode()
+        if next_page_book
+        else ""
+    )
+
     return {"books": books, "next_page_token": next_page_token}
 
 
@@ -241,6 +313,7 @@ async def search_books(
     "/publishers/{publisher_id}/books/{book_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     response_class=Response,
+    tags=["Book"],
 )
 async def delete_book(publisher_id: UUID, book_id: UUID):
     async with UnitOfWork() as uow:
