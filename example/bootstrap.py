@@ -27,14 +27,10 @@ def bootstrap(
     domino.place(
         cmd_blocks.CreatePublisher, cmd_actions.create_publisher, Uow=Uow
     )
-    domino.place(
-        cmd_blocks.FixPublisherTitle, cmd_actions.fix_publisher_title, Uow=Uow
-    )
     domino.place(cmd_blocks.CreateBook, cmd_actions.create_book, Uow=Uow)
     domino.place(cmd_blocks.DeleteBook, cmd_actions.delete_book, Uow=Uow)
     # Events
     domino.place(evt_blocks.PublisherCreated, evt_actions.publisher_created)
-    domino.place(evt_blocks.PublisherTitleFixed, evt_actions.publisher_title_fixed)
     domino.place(evt_blocks.BookCreated, evt_actions.book_created)
     domino.place(evt_blocks.BookDeleted, evt_actions.book_deleted)
     # Effects

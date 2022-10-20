@@ -1,7 +1,7 @@
 import uuid
 from typing import Any
 
-from sqlalchemy import Column, DateTime, Integer, String, Table
+from sqlalchemy import Column, Integer, String, Table
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import registry
 from sqlalchemy.types import CHAR, TypeDecorator
@@ -66,7 +66,6 @@ book_table = Table(
     Column("publisher_id", Uuid),
     Column("title", String(100)),
     Column("author_name", String(50)),
-    Column("publish_time", DateTime),
     Column("_version_number", Integer, nullable=False),
 )
 
